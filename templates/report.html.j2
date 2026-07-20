@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jira Board Digest — {{ report.period|title }} Report — {{ report.period_label }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f1f5f9; color: #0f172a;
+      font-size: 14px; line-height: 1.5;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────── */
+    .page-header {
+      background: #1e293b; color: #f8fafc;
+      padding: 20px 32px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 8px;
+    }
+    .page-header a { color: inherit; text-decoration: none; }
+    .page-header a:hover h1 { text-decoration: underline; }
+    .page-header h1 { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+    .page-header .meta { font-size: 12px; color: #94a3b8; }
+    .badge {
+      display: inline-block; padding: 2px 10px; border-radius: 99px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .05em; background: #4f46e5; color: #fff;
+      margin-left: 10px; vertical-align: middle;
+    }
+
+    /* ── Layout ──────────────────────────────────────────────────────── */
+    .page-body { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
+    .section { margin-bottom: 24px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
+
+    .card {
+      background: #fff; border-radius: 10px;
+      border: 1px solid #e2e8f0; padding: 20px 24px;
+    }
+    .card h2 {
+      font-size: 13px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .06em; color: #64748b; margin-bottom: 16px;
+    }
+    .card-note { font-size: 11px; color: #94a3b8; margin-top: 10px; }
+
+    /* ── Stat cards ──────────────────────────────────────────────────── */
+    .stats-row {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 16px; margin-bottom: 24px;
+    }
+    @media (max-width: 640px) { .stats-row { grid-template-columns: 1fr 1fr; } }
+
+    .stat-card {
+      background: #fff; border-radius: 10px;
+      border: 1px solid #e2e8f0; padding: 20px 24px;
+    }
+    .stat-value { font-size: 36px; font-weight: 700; color: #1e293b; line-height: 1; margin-bottom: 4px; }
+    .stat-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+    .stat-delta { font-size: 12px; }
+    .stat-delta.up   { color: #16a34a; }
+    .stat-delta.down { color: #dc2626; }
+    .stat-delta.flat { color: #64748b; }
+
+    /* ── Charts ──────────────────────────────────────────────────────── */
+    .chart-wrap    { position: relative; height: 260px; }
+    .chart-wrap-sm { position: relative; height: 200px; }
+    .chart-wrap-lg { position: relative; height: 320px; }
+
+    /* ── SLE pills ───────────────────────────────────────────────────── */
+    .sle-pills { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .sle-pill { border-radius: 8px; padding: 8px 14px; font-size: 12px; font-weight: 600; }
+    .sle-pill span { display: block; font-size: 18px; font-weight: 700; line-height: 1.2; }
+    .sle-p50 { background: #dbeafe; color: #1d4ed8; }
+    .sle-p85 { background: #d1fae5; color: #065f46; }
+    .sle-p95 { background: #fef3c7; color: #92400e; }
+
+    /* ── Cycle time SC vs Other split ───────────────────────────────────── */
+    .sle-split {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;
+    }
+    @media (max-width: 640px) { .sle-split { grid-template-columns: 1fr; } }
+    .sle-group-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .06em; color: #64748b; margin-bottom: 8px;
+      padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;
+    }
+    .sle-group-label.sc  { color: #0891b2; border-color: #bae6fd; }
+    .sle-group-label.other { color: #475569; }
+
+    /* ── Stage cycle time sub-headings ──────────────────────────────────── */
+    .stage-ct-sub {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .05em; color: #64748b;
+      padding: 14px 0 8px; border-bottom: 1px solid #e2e8f0; margin-bottom: 8px;
+    }
+    .stage-ct-sub:first-child { padding-top: 0; }
+    .stage-ct-sub.sc { color: #0891b2; }
+
+    /* ── Support Case row highlight in at-risk table ─────────────────────── */
+    .at-risk-sc td { background: rgba(8,145,178,0.05); }
+    .sc-tag {
+      display: inline-block; font-size: 9px; font-weight: 700; color: #0891b2;
+      background: #e0f2fe; border-radius: 3px; padding: 0 4px;
+      vertical-align: middle; margin-left: 4px; text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    /* ── Issue table (shared by Added to Board + transition detail) ───── */
+    .item-table {
+      width: 100%; border-collapse: collapse; font-size: 12px;
+      table-layout: fixed;
+    }
+    .item-table col.col-type    { width: 68px; }
+    .item-table col.col-key     { width: 90px; }
+    .item-table col.col-summary { /* flex */ }
+    .item-table col.col-assign  { width: 140px; }
+
+    .item-table th {
+      text-align: left; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em; color: #94a3b8;
+      padding: 4px 8px 8px 0; border-bottom: 1px solid #e2e8f0;
+    }
+    .item-table td {
+      padding: 6px 8px 6px 0; border-bottom: 1px solid #f1f5f9;
+      color: #475569; vertical-align: middle;
+    }
+    .item-table tr:last-child td { border-bottom: none; }
+    .item-table td a {
+      color: #4f46e5; text-decoration: none; font-weight: 600;
+    }
+    .item-table td a:hover { text-decoration: underline; }
+    .item-table td.td-assign { color: #94a3b8; font-size: 11px; }
+    .item-table td.td-summary {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 0; /* required for text-overflow in fixed layout */
+    }
+
+    /* ── Aging at-risk table ─────────────────────────────────────────── */
+    .at-risk-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 14px; }
+    .at-risk-table th {
+      text-align: left; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em; color: #94a3b8;
+      padding: 4px 0 8px; border-bottom: 1px solid #e2e8f0;
+    }
+    .at-risk-table td { padding: 6px 0; border-bottom: 1px solid #f1f5f9; color: #475569; }
+    .at-risk-table tr:last-child td { border-bottom: none; }
+    .at-risk-table td.age { font-weight: 700; color: #dc2626; white-space: nowrap; }
+    .at-risk-table td a { color: #4f46e5; text-decoration: none; font-weight: 600; }
+    .at-risk-table td a:hover { text-decoration: underline; }
+    .at-risk-table td.td-summary {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0;
+    }
+
+    /* ── Stage cycle time table ──────────────────────────────────────── */
+    .stage-ct-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .stage-ct-table th {
+      text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .05em; color: #94a3b8; padding: 4px 0 10px; border-bottom: 1px solid #e2e8f0;
+    }
+    .stage-ct-table th:not(:first-child) { text-align: right; }
+    .stage-ct-table td { padding: 8px 0; border-bottom: 1px solid #f1f5f9; color: #475569; }
+    .stage-ct-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+    .stage-ct-table tr:last-child td { border-bottom: none; }
+    .stage-ct-table .p85-cell { font-weight: 600; color: #1e293b; }
+    .stage-ct-bar {
+      display: inline-block; height: 6px; border-radius: 3px;
+      background: #818cf8; vertical-align: middle; margin-right: 6px;
+    }
+
+    /* ── Monte Carlo ─────────────────────────────────────────────────── */
+    .mc-summary { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 16px; }
+    .mc-stat .mc-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; }
+    .mc-stat strong { display: block; font-size: 22px; font-weight: 700; color: #1e293b; line-height: 1.1; }
+
+    /* ── Type badges ─────────────────────────────────────────────────── */
+    .type-badge {
+      display: inline-block; padding: 1px 7px; border-radius: 4px;
+      font-size: 10px; font-weight: 600; white-space: nowrap;
+    }
+    .type-bug     { background: #fee2e2; color: #dc2626; }
+    .type-story   { background: #dbeafe; color: #1d4ed8; }
+    .type-task    { background: #f1f5f9; color: #475569; }
+    .type-epic    { background: #ede9fe; color: #7c3aed; }
+    .type-subtask { background: #f0fdf4; color: #15803d; }
+    .type-default { background: #f8fafc; color: #64748b; }
+
+    /* ── Transition detail ───────────────────────────────────────────── */
+    details.transition { border-bottom: 1px solid #e2e8f0; }
+    details.transition:last-child { border-bottom: none; }
+    details.transition summary {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 4px; cursor: pointer; list-style: none; user-select: none;
+    }
+    details.transition summary::-webkit-details-marker { display: none; }
+    .summary-arrow {
+      width: 16px; flex-shrink: 0; color: #94a3b8; font-size: 10px;
+      transition: transform .15s;
+    }
+    details[open] .summary-arrow { transform: rotate(90deg); }
+    .summary-label { flex: 1; font-weight: 500; font-size: 13px; }
+    .summary-from { color: #64748b; }
+    .summary-to   { color: #0f172a; }
+    .summary-sep  { color: #4f46e5; margin: 0 4px; }
+    .backward-badge {
+      font-size: 10px; font-weight: 600; color: #b45309;
+      background: #fef3c7; border: 1px solid #fde68a;
+      border-radius: 4px; padding: 1px 7px; flex-shrink: 0;
+    }
+    details.backward > summary { background: #fffbeb; border-radius: 6px; }
+    details.backward > summary .summary-from,
+    details.backward > summary .summary-to { color: #92400e; }
+    details.backward > summary .summary-sep { color: #d97706; }
+    .summary-count {
+      background: #f1f5f9; border-radius: 99px; padding: 1px 9px;
+      font-size: 12px; font-weight: 600; color: #475569;
+      min-width: 28px; text-align: center; flex-shrink: 0;
+    }
+    details.backward .summary-count { background: #fef3c7; color: #92400e; }
+
+    .detail-body { padding: 4px 4px 12px 28px; }
+
+    /* ── Member table ────────────────────────────────────────────────── */
+    .member-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .member-table th {
+      text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .05em; color: #94a3b8; padding: 6px 12px 10px 0; border-bottom: 1px solid #e2e8f0;
+    }
+    .member-table td { padding: 9px 12px 9px 0; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+    .member-table tr:last-child td { border-bottom: none; }
+    .member-table td.num { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .member-table td.backward-cell { color: #b45309; font-weight: 600; }
+    .member-table td.zero { color: #cbd5e1; font-weight: 400; }
+
+    /* ── Footer ──────────────────────────────────────────────────────── */
+    .page-footer { text-align: center; font-size: 11px; color: #94a3b8; margin-top: 32px; }
+  </style>
+</head>
+<body>
+
+<header class="page-header">
+  <div>
+    <a href="{{ report.board_url }}" target="_blank" rel="noopener">
+      <h1>Jira Board Digest <span class="badge">{{ report.period }}</span></h1>
+    </a>
+    <div class="meta">{{ report.period_label }} &nbsp;·&nbsp; Board #{{ report.board_id }}</div>
+  </div>
+  <div class="meta">Generated {{ report.generated_at.strftime('%d %b %Y at %H:%M') }}</div>
+</header>
+
+<div class="page-body">
+
+  <!-- ── Stat cards ───────────────────────────────────────────────────── -->
+  <div class="stats-row section">
+    {% set delta = report.total_completed - report.prior_total_completed %}
+    <div class="stat-card">
+      <div class="stat-value">{{ report.total_completed }}</div>
+      <div class="stat-label">Completed</div>
+      <div class="stat-delta {% if delta > 0 %}up{% elif delta < 0 %}down{% else %}flat{% endif %}">
+        {% if delta > 0 %}▲ {{ delta }}{% elif delta < 0 %}▼ {{ delta|abs }}{% else %}={% endif %} vs prior period
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ report.tickets_added }}</div>
+      <div class="stat-label">Added to board</div>
+      <div class="stat-delta flat">first In Progress this period</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ report.total_in_progress }}</div>
+      <div class="stat-label">Active (WIP)</div>
+      <div class="stat-delta flat">not closed/abandoned now</div>
+    </div>
+  </div>
+
+  <!-- ── Throughput (stacked by type) ─────────────────────────────────── -->
+  <div class="card section">
+    <h2>Throughput — Tickets Completed per Day</h2>
+    <div class="chart-wrap">
+      <canvas id="throughput-chart"></canvas>
+    </div>
+  </div>
+
+  <!-- ── 6-week trend ──────────────────────────────────────────────────── -->
+  {% if report.weekly_trend %}
+  <div class="card section">
+    <h2>6-Week Trend — Added vs Completed</h2>
+    <div class="chart-wrap">
+      <canvas id="weekly-trend-chart"></canvas>
+    </div>
+    <p class="card-note">
+      Last 2 weeks: exact (same source as stat cards — changelog transitions).
+      Older weeks: approximate (Completed = Jira resolutiondate/updated field; Added = ticket creation date).
+      Resolved is treated as in-progress (awaiting QA) and does not count as Completed.
+    </p>
+  </div>
+  {% endif %}
+
+  <!-- ── Cycle Time ────────────────────────────────────────────────────── -->
+  {% if report.cycle_times %}
+  <div class="card section">
+    <h2>Cycle Time — In Progress → Done</h2>
+    <div class="sle-split">
+      <div>
+        <div class="sle-group-label sc">Support Cases ({{ report.ct_count_sc }} tickets)</div>
+        <div class="sle-pills">
+          {% if report.ct_p50_sc %}
+          <div class="sle-pill sle-p50"><span>{{ report.ct_p50_sc }}d</span>Median</div>
+          {% endif %}
+          {% if report.ct_p85_sc %}
+          <div class="sle-pill sle-p85"><span>{{ report.ct_p85_sc }}d</span>85th pct (SLE)</div>
+          {% endif %}
+          {% if report.ct_p95_sc %}
+          <div class="sle-pill sle-p95"><span>{{ report.ct_p95_sc }}d</span>95th pct</div>
+          {% endif %}
+          {% if not report.ct_p50_sc %}
+          <p style="color:#94a3b8;font-size:12px;">Not enough data</p>
+          {% endif %}
+        </div>
+        <p class="card-note" style="margin-top:6px;">High values expected — external team dependency inflates review time.</p>
+      </div>
+      <div>
+        <div class="sle-group-label other">Other Work ({{ report.ct_count_other }} tickets)</div>
+        <div class="sle-pills">
+          {% if report.ct_p50_other %}
+          <div class="sle-pill sle-p50"><span>{{ report.ct_p50_other }}d</span>Median</div>
+          {% endif %}
+          {% if report.ct_p85_other %}
+          <div class="sle-pill sle-p85"><span>{{ report.ct_p85_other }}d</span>85th pct (SLE)</div>
+          {% endif %}
+          {% if report.ct_p95_other %}
+          <div class="sle-pill sle-p95"><span>{{ report.ct_p95_other }}d</span>95th pct</div>
+          {% endif %}
+          {% if not report.ct_p50_other %}
+          <p style="color:#94a3b8;font-size:12px;">Not enough data</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="chart-wrap-lg">
+      <canvas id="ct-scatter"></canvas>
+    </div>
+    <p class="card-note">Each dot = one completed ticket. Hover for details. Dashed lines: orange = Support Case p85, green = Other Work p85.</p>
+  </div>
+  {% endif %}
+
+  <!-- ── Aging WIP + Stage Cycle Time ─────────────────────────────────── -->
+  <div class="two-col section">
+
+    <div class="card">
+      <h2>Aging WIP by Stage</h2>
+      {% if report.aging_wip %}
+      <div class="chart-wrap">
+        <canvas id="aging-chart"></canvas>
+      </div>
+      {% if report.ct_p85 %}
+      <p class="card-note">
+        Green = below median ({{ report.ct_p50 }}d) &nbsp;·&nbsp;
+        Amber = median – SLE &nbsp;·&nbsp;
+        Red = above SLE ({{ report.ct_p85 }}d)
+      </p>
+      {% endif %}
+      {% if report.aging_top_at_risk %}
+      <table class="at-risk-table" style="table-layout:fixed;">
+        <colgroup>
+          <col style="width:68px;">
+          <col style="width:80px;">
+          <col>
+          <col style="width:40px;">
+        </colgroup>
+        <thead><tr><th>Type</th><th>Ticket</th><th>Summary</th><th>Age</th></tr></thead>
+        <tbody>
+          {% for item in report.aging_top_at_risk %}
+          {% set is_sc = item.issue_type == report.support_case_type %}
+          <tr class="{% if is_sc %}at-risk-sc{% endif %}">
+            <td>
+              {% set tc = 'type-' + (item.issue_type|lower|replace(' ','-')) if item.issue_type else 'type-default' %}
+              <span class="type-badge {{ tc }}">{{ item.issue_type or '?' }}</span>
+            </td>
+            <td>
+              <a href="{{ report.base_url }}/browse/{{ item.key }}" target="_blank">{{ item.key }}</a>
+              {% if is_sc %}<span class="sc-tag" title="External team dependency may inflate age">SC</span>{% endif %}
+            </td>
+            <td class="td-summary">{{ item.summary }}</td>
+            <td class="age">{{ item.age_days }}d</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      {% if report.stale_wip_count > 0 %}
+      <div style="margin-top:12px; padding:8px 12px; background:#fef3c7; border-radius:6px; font-size:12px; color:#92400e; line-height:1.5;">
+        <strong>⚠ {{ report.stale_wip_count }} stale ticket{{ 's' if report.stale_wip_count != 1 else '' }} excluded</strong>
+        (age &gt; {{ report.stale_threshold_days }} days — likely forgotten or abandoned work):
+        {% for s in report.stale_wip_issues %}
+        <br>&nbsp;&nbsp;<a href="{{ report.base_url }}/browse/{{ s.key }}" target="_blank" style="color:#92400e;font-weight:600;">{{ s.key }}</a>
+        {{ s.summary[:60] }}{% if s.summary|length > 60 %}…{% endif %}
+        <em style="color:#b45309;">({{ s.age_days }}d)</em>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <p style="color:#94a3b8;font-size:13px;">No in-progress tickets found.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Stage Cycle Time</h2>
+      {% macro stage_table(rows) %}
+        {% if rows %}
+        {% set max_p85 = rows | map(attribute='p85') | max %}
+        <table class="stage-ct-table">
+          <thead><tr><th>Stage</th><th>Tickets</th><th>Median</th><th>85th pct</th></tr></thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td>
+                {% set bar_w = (row.p85 / max_p85 * 80)|int if max_p85 > 0 else 0 %}
+                <span class="stage-ct-bar" style="width:{{ bar_w }}px;"></span>{{ row.stage }}
+              </td>
+              <td>{{ row.count }}</td>
+              <td>{{ row.p50 }}d</td>
+              <td class="p85-cell">{{ row.p85 }}d</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p style="color:#94a3b8;font-size:12px;padding:4px 0;">No data.</p>
+        {% endif %}
+      {% endmacro %}
+
+      {% if report.stage_ct_sc or report.stage_ct_other %}
+        <div class="stage-ct-sub sc">Support Cases</div>
+        {{ stage_table(report.stage_ct_sc) }}
+        <div class="stage-ct-sub">Other Work</div>
+        {{ stage_table(report.stage_ct_other) }}
+        <p class="card-note">Time in each stage across completed tickets this period.</p>
+      {% else %}
+        <p style="color:#94a3b8;font-size:13px;">No stage data available.</p>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- ── Ticket type breakdown ─────────────────────────────────────────── -->
+  <div class="two-col section">
+    <div class="card">
+      <h2>Completions by Type</h2>
+      <div class="chart-wrap-sm"><canvas id="type-done-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Active WIP by Type</h2>
+      <div class="chart-wrap-sm"><canvas id="type-wip-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── Monte Carlo ────────────────────────────────────────────────────── -->
+  {% if report.mc %}
+  <div class="card section">
+    <h2>7-Day Throughput Forecast (Monte Carlo, {{ report.mc.data_days }}-day history)</h2>
+    <div class="mc-summary">
+      <div class="mc-stat">
+        <div class="mc-label">85% confidence — at least</div>
+        <strong>{{ report.mc.at_least_85 }} tickets</strong>
+      </div>
+      <div class="mc-stat">
+        <div class="mc-label">70% confidence — at least</div>
+        <strong>{{ report.mc.at_least_70 }} tickets</strong>
+      </div>
+      <div class="mc-stat">
+        <div class="mc-label">50% confidence — at least</div>
+        <strong>{{ report.mc.at_least_50 }} tickets</strong>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="mc-chart"></canvas></div>
+    <p class="card-note">10,000 simulations sampling from historical daily completions. Assumes stable team and workflow.</p>
+  </div>
+  {% endif %}
+
+  <!-- ── Team members ──────────────────────────────────────────────────── -->
+  {% if report.assignee_stats %}
+  <div class="card section">
+    <h2>By Team Member</h2>
+    <table class="member-table">
+      <thead>
+        <tr><th>Name</th><th>Completed</th><th>Added</th><th>Backward moves</th></tr>
+      </thead>
+      <tbody>
+        {% for m in report.assignee_stats %}
+        <tr>
+          <td>{{ m.name }}</td>
+          <td class="num {% if m.completed == 0 %}zero{% endif %}">{{ m.completed }}</td>
+          <td class="num {% if m.added == 0 %}zero{% endif %}">{{ m.added }}</td>
+          <td class="{% if m.backward > 0 %}backward-cell{% else %}zero{% endif %}">
+            {{ m.backward }}{% if m.backward > 0 %} ↩{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- ── Transition detail ─────────────────────────────────────────────── -->
+  <div class="card section">
+    <h2>
+      Transition Detail
+      {% if report.backward_transition_count > 0 %}
+      <span class="backward-badge" style="margin-left:8px;font-size:11px;">↩ {{ report.backward_transition_count }} backward</span>
+      {% endif %}
+    </h2>
+    {% if report.transition_counts %}
+      {% for pair, count in report.transition_counts.items()|sort(attribute='1', reverse=True) %}
+        {% set parts = pair.split(' → ') %}
+        {% set bwd = pair in report.backward_pairs %}
+        <details class="transition {% if bwd %}backward{% endif %}">
+          <summary>
+            <span class="summary-arrow">▶</span>
+            <span class="summary-label">
+              <span class="summary-from">{{ parts[0] }}</span>
+              <span class="summary-sep">→</span>
+              <span class="summary-to">{{ parts[1] if parts|length > 1 else '' }}</span>
+            </span>
+            {% if bwd %}<span class="backward-badge">↩ backward</span>{% endif %}
+            <span class="summary-count">{{ count }}</span>
+          </summary>
+          <div class="detail-body">
+            <table class="item-table">
+              <colgroup>
+                <col class="col-type">
+                <col class="col-key">
+                <col class="col-summary">
+              </colgroup>
+              <thead>
+                <tr><th>Type</th><th>Ticket</th><th>Summary</th></tr>
+              </thead>
+              <tbody>
+                {% for iss in report.transition_issues[pair] %}
+                <tr>
+                  <td>
+                    {% set tc = 'type-' + (iss.issue_type|lower|replace(' ','-')) if iss.issue_type else 'type-default' %}
+                    <span class="type-badge {{ tc }}">{{ iss.issue_type or '?' }}</span>
+                  </td>
+                  <td><a href="{{ report.base_url }}/browse/{{ iss.key }}" target="_blank">{{ iss.key }}</a></td>
+                  <td class="td-summary">{{ iss.summary }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      {% endfor %}
+    {% else %}
+      <p style="color:#94a3b8;font-size:13px;">No transitions recorded in this period.</p>
+    {% endif %}
+  </div>
+
+  <!-- ── Added to board ────────────────────────────────────────────────── -->
+  {% if report.tickets_added_issues %}
+  <div class="card section">
+    <h2>Added to Board ({{ report.tickets_added }} ticket{{ 's' if report.tickets_added != 1 else '' }})</h2>
+    <table class="item-table">
+      <colgroup>
+        <col class="col-type">
+        <col class="col-key">
+        <col class="col-summary">
+        <col class="col-assign">
+      </colgroup>
+      <thead>
+        <tr><th>Type</th><th>Ticket</th><th>Summary</th><th>Assignee</th></tr>
+      </thead>
+      <tbody>
+        {% for iss in report.tickets_added_issues %}
+        <tr>
+          <td>
+            {% set tc = 'type-' + (iss.issue_type|lower|replace(' ','-')) if iss.issue_type else 'type-default' %}
+            <span class="type-badge {{ tc }}">{{ iss.issue_type or '?' }}</span>
+          </td>
+          <td><a href="{{ report.base_url }}/browse/{{ iss.key }}" target="_blank">{{ iss.key }}</a></td>
+          <td class="td-summary">{{ iss.summary }}</td>
+          <td class="td-assign">{{ iss.assignee_name }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+
+<footer class="page-footer">
+  Jira Board Digest · Board #{{ report.board_id }} · {{ report.base_url | replace('https://', '') }}
+</footer>
+
+<!-- ── Serialised data ────────────────────────────────────────────────── -->
+<script>
+const THROUGHPUT_LABELS  = {{ report.throughput_labels | tojson }};
+const THROUGHPUT_CURRENT = {{ report.throughput_current | tojson }};
+const THROUGHPUT_PRIOR   = {{ report.throughput_prior | tojson }};
+const THROUGHPUT_BY_TYPE = {{ report.throughput_by_type | tojson }};
+const WEEKLY_TREND       = {{ report.weekly_trend | tojson }};
+const CT_DATA       = {{ report.cycle_times | tojson }};
+const CT_P50        = {{ report.ct_p50 | tojson }};
+const CT_P85        = {{ report.ct_p85 | tojson }};
+const CT_P95        = {{ report.ct_p95 | tojson }};
+const CT_P85_SC     = {{ report.ct_p85_sc | tojson }};
+const CT_P85_OTHER  = {{ report.ct_p85_other | tojson }};
+const SC_TYPE       = {{ report.support_case_type | tojson }};
+const AGING_BUCKETS = {{ report.aging_stage_buckets | tojson }};
+const WIP_BY_TYPE   = {{ report.wip_by_type | tojson }};
+const MC = {{ report.mc | tojson }};
+</script>
+
+<!-- ── Type colour + grouping helpers ────────────────────────────────── -->
+<script>
+const TYPE_COLORS = {
+  Bug: '#dc2626', Story: '#1d4ed8', Task: '#64748b',
+  Epic: '#7c3aed', Subtask: '#15803d',
+  'Bug Sub-task': '#f97316', 'Support Case': '#0891b2', 'Tech Story': '#8b5cf6',
+};
+function typeColor(t, alpha) {
+  if (t === 'Other') return alpha ? `rgba(148,163,184,${alpha})` : '#94a3b8';
+  const hex = TYPE_COLORS[t] || '#94a3b8';
+  if (!alpha) return hex;
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Merge types with small totals into an "Other" bucket to keep legends readable.
+// Uses a floor of 3 items OR 4% of total, whichever is larger.
+function groupSmallTypeArrays(typeArrayMap) {
+  const totals = Object.fromEntries(
+    Object.entries(typeArrayMap).map(([t,a]) => [t, a.reduce((s,v)=>s+v,0)])
+  );
+  const grand = Object.values(totals).reduce((s,v)=>s+v,0);
+  const min   = Math.max(3, Math.ceil(grand * 0.04));
+  let other = null;
+  const result = {};
+  for (const [t, arr] of Object.entries(typeArrayMap)) {
+    if (totals[t] >= min) { result[t] = arr; }
+    else {
+      if (!other) other = arr.map(()=>0);
+      arr.forEach((v,i)=>{ other[i]+=v; });
+    }
+  }
+  if (other?.some(v=>v>0)) result['Other'] = other;
+  return result;
+}
+
+function groupSmallCounts(counts) {
+  const grand = Object.values(counts).reduce((s,v)=>s+v,0);
+  const min   = Math.max(3, Math.ceil(grand * 0.04));
+  const result = {}; let other = 0;
+  for (const [t,v] of Object.entries(counts)) {
+    if (v >= min) result[t]=v; else other+=v;
+  }
+  if (other>0) result['Other']=other;
+  return result;
+}
+</script>
+
+<!-- ── Throughput stacked ─────────────────────────────────────────────── -->
+<script>
+(function () {
+  const grouped = groupSmallTypeArrays(THROUGHPUT_BY_TYPE);
+  const datasets = Object.entries(grouped).map(([t, arr]) => ({
+    type: 'bar', label: t,
+    data: arr,
+    backgroundColor: typeColor(t, 0.85),
+    borderRadius: 3, stack: 'current',
+  }));
+  datasets.push({
+    type: 'bar', label: 'Prior period (total)',
+    data: THROUGHPUT_PRIOR,
+    backgroundColor: 'rgba(148,163,184,0.25)',
+    borderColor: 'rgba(148,163,184,0.7)', borderWidth: 1,
+    borderRadius: 3, stack: 'prior',
+  });
+  new Chart(document.getElementById('throughput-chart'), {
+    type: 'bar',
+    data: { labels: THROUGHPUT_LABELS, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { right: 16 } },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { stacked: false, beginAtZero: true, ticks: { precision: 0, font: { size: 11 } }, grid: { color: '#f1f5f9' } },
+      },
+    },
+  });
+})();
+</script>
+
+<!-- ── 6-week trend ────────────────────────────────────────────────────── -->
+<script>
+if (WEEKLY_TREND) {
+  // Exact indices are the two most recent weeks (overridden with changelog data).
+  // All other weeks use the faster field-date approximation.
+  const exactIdx = new Set(WEEKLY_TREND.exact_indices || []);
+
+  new Chart(document.getElementById('weekly-trend-chart'), {
+    type: 'line',
+    data: {
+      labels: WEEKLY_TREND.labels,
+      datasets: [
+        {
+          label: 'Completed',
+          data: WEEKLY_TREND.completed,
+          borderColor: '#4f46e5', backgroundColor: 'rgba(79,70,229,0.08)',
+          tension: 0.3, fill: true,
+          pointRadius: WEEKLY_TREND.labels.map((_, i) => exactIdx.has(i) ? 6 : 4),
+          pointHoverRadius: 7,
+        },
+        {
+          label: 'Added to board',
+          data: WEEKLY_TREND.added,
+          borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.05)',
+          tension: 0.3, fill: true,
+          pointRadius: WEEKLY_TREND.labels.map((_, i) => exactIdx.has(i) ? 6 : 4),
+          pointHoverRadius: 7,
+          borderDash: [5, 3],
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { right: 16 } },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          mode: 'index', intersect: false,
+          callbacks: {
+            afterBody: (items) => {
+              const i = items[0]?.dataIndex;
+              if (i !== undefined && !exactIdx.has(i)) {
+                return ['(approximate — based on Jira field dates)'];
+              }
+              return [];
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { font: { size: 11 }, maxRotation: 30, autoSkipPadding: 12 },
+        },
+        y: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } }, grid: { color: '#f1f5f9' } },
+      },
+    },
+  });
+}
+</script>
+
+<!-- ── Cycle time scatter ─────────────────────────────────────────────── -->
+<script>
+if (CT_DATA && CT_DATA.length) {
+  const types = [...new Set(CT_DATA.map(d => d.issue_type))];
+  const pointDatasets = types.map(t => ({
+    type: 'scatter', label: t,
+    data: CT_DATA.filter(d => d.issue_type === t).map(d => ({
+      x: d.completion_ts_ms, y: d.cycle_time_days,
+      key: d.issue_key, summary: d.issue_summary,
+    })),
+    backgroundColor: typeColor(t, 0.75),
+    pointRadius: 5, pointHoverRadius: 7,
+  }));
+
+  const xs = CT_DATA.map(d => d.completion_ts_ms);
+  const xMin = Math.min(...xs) - 86400000, xMax = Math.max(...xs) + 86400000;
+
+  // Two p85 reference lines: one for Support Cases (orange), one for Other Work (green).
+  // Both are hidden from the chart legend — the SLE pills above the chart explain them.
+  const refLines = [];
+  if (CT_P85_SC != null) {
+    refLines.push({
+      type: 'line',
+      label: `SC p85 (${CT_P85_SC}d)`,
+      data: [{x: xMin, y: CT_P85_SC}, {x: xMax, y: CT_P85_SC}],
+      borderColor: '#f97316', borderDash: [6, 3], borderWidth: 1.5,
+      pointRadius: 0, fill: false,
+    });
+  }
+  if (CT_P85_OTHER != null) {
+    refLines.push({
+      type: 'line',
+      label: `Other p85 (${CT_P85_OTHER}d)`,
+      data: [{x: xMin, y: CT_P85_OTHER}, {x: xMax, y: CT_P85_OTHER}],
+      borderColor: '#16a34a', borderDash: [6, 3], borderWidth: 1.5,
+      pointRadius: 0, fill: false,
+    });
+  }
+
+  new Chart(document.getElementById('ct-scatter'), {
+    data: { datasets: [...pointDatasets, ...refLines] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            boxWidth: 12, font: { size: 11 },
+            filter: item => !item.text.includes('p85'),
+          },
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const d = ctx.raw;
+              return d.key ? `${d.key}: ${d.y}d — ${d.summary}` : ctx.dataset.label;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          ticks: {
+            font: { size: 11 },
+            callback: v => new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+            maxTicksLimit: 8,
+          },
+          grid: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Days', font: { size: 11 } },
+          ticks: { font: { size: 11 } }, grid: { color: '#f1f5f9' },
+        },
+      },
+    },
+  });
+}
+</script>
+
+<!-- ── Aging WIP ───────────────────────────────────────────────────────── -->
+<script>
+if (AGING_BUCKETS && AGING_BUCKETS.stages && AGING_BUCKETS.stages.length) {
+  new Chart(document.getElementById('aging-chart'), {
+    type: 'bar',
+    data: {
+      labels: AGING_BUCKETS.stages,
+      datasets: [
+        { label: 'On track',        data: AGING_BUCKETS.green, backgroundColor: '#86efac', borderRadius: 3 },
+        { label: 'Approaching SLE', data: AGING_BUCKETS.amber, backgroundColor: '#fcd34d', borderRadius: 3 },
+        { label: 'Breaching SLE',   data: AGING_BUCKETS.red,   backgroundColor: '#fca5a5', borderRadius: 3 },
+      ],
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      scales: {
+        x: { stacked: true, beginAtZero: true, ticks: { precision: 0, font: { size: 11 } }, grid: { color: '#f1f5f9' } },
+        y: { stacked: true, ticks: { font: { size: 11 } }, grid: { display: false } },
+      },
+    },
+  });
+}
+</script>
+
+<!-- ── Type donuts ────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  const rawDone = {};
+  for (const [t, days] of Object.entries(THROUGHPUT_BY_TYPE)) {
+    rawDone[t] = days.reduce((a,b)=>a+b,0);
+  }
+  const doneCounts = groupSmallCounts(rawDone);
+  const wipCounts  = groupSmallCounts(WIP_BY_TYPE);
+
+  function donut(id, grouped) {
+    const labels = Object.keys(grouped).filter(t => grouped[t] > 0);
+    const values = labels.map(t => grouped[t]);
+    new Chart(document.getElementById(id), {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{ data: values, backgroundColor: labels.map(t => typeColor(t, 0.85)), borderWidth: 2, borderColor: '#fff' }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              boxWidth: 12, font: { size: 11 },
+              generateLabels: chart => {
+                const ds = chart.data.datasets[0];
+                return chart.data.labels.map((l, i) => ({
+                  text: `${l} (${ds.data[i]})`,
+                  fillStyle: ds.backgroundColor[i],
+                  strokeStyle: '#fff', lineWidth: 2, index: i,
+                }));
+              },
+            },
+          },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}` } },
+        },
+        cutout: '60%',
+      },
+    });
+  }
+
+  if (Object.keys(doneCounts).length) donut('type-done-chart', doneCounts);
+  if (Object.keys(wipCounts).length)  donut('type-wip-chart',  wipCounts);
+})();
+</script>
+
+<!-- ── Monte Carlo ────────────────────────────────────────────────────── -->
+<script>
+if (MC) {
+  const colors = MC.labels.map(v =>
+    v >= MC.at_least_85 ? '#86efac' : v >= MC.at_least_50 ? '#fcd34d' : '#fca5a5'
+  );
+  // Auto step-size: aim for ~10 ticks across the range.
+  const mcRange = MC.labels.length > 1 ? MC.labels[MC.labels.length-1] - MC.labels[0] : 10;
+  const mcStep  = Math.max(1, Math.ceil(mcRange / 10));
+  new Chart(document.getElementById('mc-chart'), {
+    type: 'bar',
+    data: {
+      labels: MC.labels,
+      datasets: [{ label: 'Probability (%)', data: MC.probs, backgroundColor: colors, borderRadius: 3 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw}% chance of exactly ${ctx.label} tickets` } },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Tickets completed in next 7 days', font: { size: 11 } },
+          ticks: { font: { size: 11 }, stepSize: mcStep },
+          grid: { display: false },
+        },
+        y: {
+          title: { display: true, text: 'Probability (%)', font: { size: 11 } },
+          ticks: { font: { size: 11 } }, grid: { color: '#f1f5f9' },
+        },
+      },
+    },
+  });
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "jira": {
+    "base_url": "https://your-org.atlassian.net",
+    "board_id": 1234,
+    "done_statuses": ["Done", "Closed"],
+    "board_url": "https://your-org.atlassian.net/jira/software/c/projects/PROJ/boards/1234",
+    "active_status": "In Progress",
+    "max_wip_age_days": 180,
+    "exclude_types": ["Sub-task"],
+    "support_case_type": "Support Case",
+    "week_start_day": 0,
+    "non_wip_statuses": []
+  },
+  "output": {
+    "directory": "reports",
+    "filename_pattern": "{period}_{date}.html"
+  },
+  "email": {
+    "enabled": false,
+    "smtp_host": "",
+    "smtp_port": 587,
+    "use_tls": true,
+    "from": "",
+    "to": [],
+    "subject_pattern": "Board Report — {period_label} {date}"
+  }
+}
