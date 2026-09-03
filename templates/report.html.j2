@@ -284,10 +284,10 @@
     </div>
   </div>
 
-  <!-- ── 6-week trend ──────────────────────────────────────────────────── -->
+  <!-- ── 10-week trend ─────────────────────────────────────────────────── -->
   {% if report.weekly_trend %}
   <div class="card section">
-    <h2>6-Week Trend — Added vs Completed</h2>
+    <h2>10-Week Trend — Added vs Completed</h2>
     <div class="chart-wrap">
       <canvas id="weekly-trend-chart"></canvas>
     </div>
@@ -699,7 +699,7 @@ function groupSmallCounts(counts) {
 })();
 </script>
 
-<!-- ── 6-week trend ────────────────────────────────────────────────────── -->
+<!-- ── 10-week trend ───────────────────────────────────────────────────── -->
 <script>
 if (WEEKLY_TREND) {
   // Exact indices are the two most recent weeks (overridden with changelog data).
