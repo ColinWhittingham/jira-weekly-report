@@ -1,8 +1,8 @@
 import os
 import re
 import time
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import requests
 from dotenv import load_dotenv
@@ -28,7 +28,7 @@ class JiraClient:
         self._session.auth = (email, token)
         self._session.headers.update({"Accept": "application/json"})
 
-    def _get(self, path: str, params: dict = None) -> dict:
+    def _get(self, path: str, params: dict | None = None) -> dict:
         url = f"{self.base_url}{path}"
         for attempt in range(3):
             resp = self._session.get(url, params=params or {})
@@ -58,7 +58,7 @@ class JiraClient:
     def get_board_issues(
         self,
         board_id: int,
-        jql: str = None,
+        jql: str | None = None,
         fields: str = "status,summary,issuetype",
     ) -> Generator[dict, None, None]:
         path = f"/rest/agile/1.0/board/{board_id}/issue"

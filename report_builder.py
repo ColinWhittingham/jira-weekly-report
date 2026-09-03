@@ -8,7 +8,6 @@ from datetime import date, datetime, timedelta, timezone
 
 from jira_client import JiraClient, parse_jira_dt
 
-
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -126,7 +125,7 @@ def date_window(period: str, week_start_day: int = 0) -> tuple[date, date]:
     week_start_day (0=Mon, 1=Tue, …, 6=Sun).  This means the report always
     covers a clean calendar week regardless of which day it is run on.
     """
-    today = date.today()
+    today = datetime.now(tz=timezone.utc).astimezone().date()
     if period == "daily":
         y = today - timedelta(days=1)
         return y, y
@@ -221,7 +220,7 @@ def _fetch_transitions_in_window(
                 if ts.tzinfo is None:
                     ts = ts.replace(tzinfo=timezone.utc)
                 changes.append((ts, e["fromString"], e["toString"]))
-            except Exception:
+            except (ValueError, KeyError, TypeError):
                 pass
         changes.sort(key=lambda x: x[0])
 
@@ -279,7 +278,7 @@ def _fetch_transitions_in_window(
                     added_issues.append(ni)
                 if ct:
                     cycle_time_records.append(ct)
-            except Exception:
+            except (OSError, ValueError, KeyError, TypeError):
                 pass
 
     return transitions, added_issues, cycle_time_records
@@ -346,7 +345,7 @@ def _fetch_aging_wip(
                 if ts.tzinfo is None:
                     ts = ts.replace(tzinfo=timezone.utc)
                 changes.append((ts, e["toString"]))
-            except Exception:
+            except (ValueError, KeyError, TypeError):
                 pass
         changes.sort(key=lambda x: x[0])
 
@@ -366,7 +365,7 @@ def _fetch_aging_wip(
                 r = fut.result()
                 if r:
                     all_aging.append(r)
-            except Exception:
+            except (OSError, ValueError, KeyError, TypeError):
                 pass
 
     all_aging.sort(key=lambda x: x["age_days"], reverse=True)
@@ -444,7 +443,7 @@ def _resolve_date(fields: dict, tz: timezone) -> date | None:
         if val:
             try:
                 return parse_jira_dt(val).astimezone(tz).date()
-            except Exception:
+            except (ValueError, TypeError):
                 pass
     return None
 
@@ -476,7 +475,7 @@ def _compute_weekly_trend(
     if report_end is not None:
         last_week_end = report_end
     else:
-        today = date.today()
+        today = datetime.now(tz=timezone.utc).astimezone().date()
         days_since_start = (today.weekday() - week_start_day) % 7
         this_week_start = today - timedelta(days=days_since_start)
         last_week_end = this_week_start - timedelta(days=1)
@@ -514,7 +513,7 @@ def _compute_weekly_trend(
                     if ws <= d <= we:
                         added[i] += 1
                         break
-            except Exception:
+            except (ValueError, TypeError):
                 pass
 
     # Override the two most recent weeks with exact changelog-based counts.

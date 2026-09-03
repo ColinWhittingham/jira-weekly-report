@@ -1,14 +1,12 @@
-#!/usr/bin/env python3
 import argparse
 import json
 import sys
 from datetime import date
-from datetime import datetime
 from pathlib import Path
 
-from jira_client import JiraClient, ConfigError
-from report_builder import build_report_data
+from jira_client import ConfigError, JiraClient
 from renderer import render_report
+from report_builder import build_report_data
 
 ROOT = Path(__file__).parent
 
@@ -39,7 +37,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--start-date",
-        type=lambda s: datetime.strptime(s, "%Y-%m-%d").date(),
+        type=date.fromisoformat,
         default=None,
         metavar="YYYY-MM-DD",
         help="Override the start date for a weekly report (e.g. for an unusually long week).",
@@ -73,13 +71,13 @@ def main() -> None:
             non_wip_statuses=jira_cfg.get("non_wip_statuses", []),
             override_start=args.start_date,
         )
-    except Exception as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"ERROR fetching data from Jira: {exc}", file=sys.stderr)
         sys.exit(1)
 
     try:
         html = render_report(report, ROOT / "templates")
-    except Exception as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"ERROR rendering report: {exc}", file=sys.stderr)
         sys.exit(1)
 
@@ -87,7 +85,7 @@ def main() -> None:
     output_dir.mkdir(exist_ok=True)
     filename = output_cfg["filename_pattern"].format(
         period=args.period,
-        date=date.today().isoformat(),
+        date=report.generated_at.date().isoformat(),
     )
     output_path = output_dir / filename
     output_path.write_text(html, encoding="utf-8")
