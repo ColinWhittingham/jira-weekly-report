@@ -8,7 +8,6 @@ from datetime import date, datetime, timedelta, timezone
 
 from jira_client import JiraClient, parse_jira_dt
 
-
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -126,7 +125,7 @@ def date_window(period: str, week_start_day: int = 0) -> tuple[date, date]:
     week_start_day (0=Mon, 1=Tue, …, 6=Sun).  This means the report always
     covers a clean calendar week regardless of which day it is run on.
     """
-    today = date.today()
+    today = datetime.now(tz=timezone.utc).astimezone().date()
     if period == "daily":
         y = today - timedelta(days=1)
         return y, y
@@ -221,7 +220,7 @@ def _fetch_transitions_in_window(
                 if ts.tzinfo is None:
                     ts = ts.replace(tzinfo=timezone.utc)
                 changes.append((ts, e["fromString"], e["toString"]))
-            except Exception:
+            except (ValueError, KeyError, TypeError):
                 pass
         changes.sort(key=lambda x: x[0])
 
@@ -279,7 +278,7 @@ def _fetch_transitions_in_window(
                     added_issues.append(ni)
                 if ct:
                     cycle_time_records.append(ct)
-            except Exception:
+            except (OSError, ValueError, KeyError, TypeError):
                 pass
 
     return transitions, added_issues, cycle_time_records
@@ -346,7 +345,7 @@ def _fetch_aging_wip(
                 if ts.tzinfo is None:
                     ts = ts.replace(tzinfo=timezone.utc)
                 changes.append((ts, e["toString"]))
-            except Exception:
+            except (ValueError, KeyError, TypeError):
                 pass
         changes.sort(key=lambda x: x[0])
 
@@ -366,7 +365,7 @@ def _fetch_aging_wip(
                 r = fut.result()
                 if r:
                     all_aging.append(r)
-            except Exception:
+            except (OSError, ValueError, KeyError, TypeError):
                 pass
 
     all_aging.sort(key=lambda x: x["age_days"], reverse=True)
@@ -444,7 +443,7 @@ def _resolve_date(fields: dict, tz: timezone) -> date | None:
         if val:
             try:
                 return parse_jira_dt(val).astimezone(tz).date()
-            except Exception:
+            except (ValueError, TypeError):
                 pass
     return None
 
@@ -456,10 +455,13 @@ def _compute_weekly_trend(
     week_start_day: int = 0,
     exact_current: tuple[int, int] | None = None,
     exact_prior: tuple[int, int] | None = None,
+    report_end: date | None = None,
 ) -> dict | None:
-    """Return {labels, completed, added, exact_weeks} for the 6 most recent complete weeks.
+    """Return {labels, completed, added, exact_weeks} for the 10 most recent weeks.
 
-    Weeks are aligned to week_start_day (0=Mon … 6=Sun).
+    Weeks are aligned to week_start_day (0=Mon … 6=Sun).  When report_end is
+    supplied, that date is used as the end of the most recent week so the trend
+    always includes the actual report period.
 
     The field-based approach (resolutiondate/updated for completed, created for
     added) is fast but imprecise: resolutiondate is often unset so updated is
@@ -470,16 +472,19 @@ def _compute_weekly_trend(
 
     exact_current / exact_prior: (completed_count, added_to_board_count)
     """
-    today = date.today()
-    days_since_start = (today.weekday() - week_start_day) % 7
-    this_week_start = today - timedelta(days=days_since_start)
-    last_week_end = this_week_start - timedelta(days=1)
+    if report_end is not None:
+        last_week_end = report_end
+    else:
+        today = datetime.now(tz=timezone.utc).astimezone().date()
+        days_since_start = (today.weekday() - week_start_day) % 7
+        this_week_start = today - timedelta(days=days_since_start)
+        last_week_end = this_week_start - timedelta(days=1)
 
     day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     start_name = day_names[week_start_day]
 
     weeks: list[tuple[date, date, str]] = []
-    for i in range(5, -1, -1):
+    for i in range(9, -1, -1):
         w_end = last_week_end - timedelta(weeks=i)
         w_start = w_end - timedelta(days=6)
         try:
@@ -488,8 +493,8 @@ def _compute_weekly_trend(
             label = f"{w_start.strftime('%#d %b')}–{w_end.strftime('%#d %b')}"
         weeks.append((w_start, w_end, label))
 
-    completed = [0] * 6
-    added = [0] * 6
+    completed = [0] * 10
+    added = [0] * 10
 
     for iss in resolved_issues:
         d = _resolve_date(iss.get("fields") or {}, tz)
@@ -508,18 +513,18 @@ def _compute_weekly_trend(
                     if ws <= d <= we:
                         added[i] += 1
                         break
-            except Exception:
+            except (ValueError, TypeError):
                 pass
 
     # Override the two most recent weeks with exact changelog-based counts.
-    # Index 5 = most recent (= current report period), 4 = prior period.
+    # Index 9 = most recent (= current report period), 8 = prior period.
     exact_week_indices: list[int] = []
     if exact_current is not None:
-        completed[5], added[5] = exact_current
-        exact_week_indices.append(5)
+        completed[9], added[9] = exact_current
+        exact_week_indices.append(9)
     if exact_prior is not None:
-        completed[4], added[4] = exact_prior
-        exact_week_indices.append(4)
+        completed[8], added[8] = exact_prior
+        exact_week_indices.append(8)
 
     return {
         "labels": [w[2] for w in weeks],
@@ -677,10 +682,14 @@ def build_report_data(
     support_case_type: str = "Support Case",
     week_start_day: int = 0,
     non_wip_statuses: list[str] | None = None,
+    override_start: date | None = None,
 ) -> ReportData:
     tz = _local_offset()
     now = datetime.now(tz=tz)
     start, end = date_window(period, week_start_day)
+    if override_start is not None and period == "weekly":
+        start = override_start
+        end = max(end, override_start + timedelta(days=6))
     start_dt, end_dt = _window_datetimes(start, end)
 
     delta = (end - start).days + 1
@@ -727,10 +736,10 @@ def build_report_data(
         )
     total_in_progress = sum(wip_by_type.values())
 
-    print("  Fetching 6-week trend + Monte Carlo history…")
+    print("  Fetching 10-week trend + Monte Carlo history…")
     excl_jql = _type_excl_jql(exclude_types)
-    resolved_42d = client.get_resolved_in_period(board_id, done_statuses, days=42, extra_jql=excl_jql)
-    created_42d = client.get_created_in_period(board_id, days=42, extra_jql=excl_jql)
+    resolved_42d = client.get_resolved_in_period(board_id, done_statuses, days=70, extra_jql=excl_jql)
+    created_42d = client.get_created_in_period(board_id, days=70, extra_jql=excl_jql)
     # weekly_trend is built after throughput series so we can inject exact counts (see below)
 
     historical_daily: dict[str, int] = {}
@@ -748,14 +757,11 @@ def build_report_data(
         prior_transitions, done_statuses, prior_start, prior_end,
     )
 
-    # Build 6-week trend now that exact counts are available.
-    # The two most recent weeks are overridden with changelog-based numbers so
-    # the trend bars agree with the stat cards, which use the same source.
-    # Older weeks use the faster resolutiondate/created-date approximation.
     weekly_trend = _compute_weekly_trend(
         resolved_42d, created_42d, tz, week_start_day,
         exact_current=(sum(current_counts), len(added_issues)),
         exact_prior=(sum(prior_counts), len(prior_added_issues)),
+        report_end=end,
     )
 
     # Stage cycle times — overall, SC, and Other

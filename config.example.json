@@ -8,7 +8,7 @@
     "max_wip_age_days": 180,
     "exclude_types": ["Sub-task"],
     "support_case_type": "Support Case",
-    "week_start_day": 0,
+    "week_start_day": 3,
     "non_wip_statuses": []
   },
   "output": {

@@ -41,8 +41,11 @@ JIRA_API_TOKEN=your-api-token-here
 # Yesterday's activity
 python generate_report.py --period daily
 
-# Trailing 7 days
+# Previous Thu–Wed week (standard)
 python generate_report.py --period weekly
+
+# One-off week with a non-standard start date
+python generate_report.py --period weekly --start-date 2026-07-21
 ```
 
 The report is written to `reports/daily_YYYY-MM-DD.html` or `reports/weekly_YYYY-MM-DD.html`.
@@ -61,11 +64,11 @@ links; a "no internet" warning will appear in the footer only if those CDNs are 
 5. **Settings** tab → check "Run task as soon as possible after a scheduled start is missed"
 6. Click OK
 
-### Weekly report (runs every Monday at 08:00)
+### Weekly report (runs every Thursday at 08:00)
 
 Repeat the steps above with:
 - Name: `Jira Board Weekly Report`
-- Triggers: Weekly, every **Monday** at 08:00
+- Triggers: Weekly, every **Thursday** at 08:00
 - Action: full path to `launch_weekly.bat`
 
 Logs are written to `logs\daily.log` and `logs\weekly.log`.
@@ -96,6 +99,6 @@ All non-secret settings live in `config.json` (copy from `config.example.json` t
 | `jira.support_case_type` | `"Support Case"` | Issue type label for support work |
 | `jira.exclude_types` | `["Sub-task"]` | Issue types excluded entirely |
 | `jira.max_wip_age_days` | `180` | Upper bound (days) for aging WIP chart |
-| `jira.week_start_day` | `0` | First day of week (0 = Monday) |
+| `jira.week_start_day` | `3` | First day of the reporting week (0 = Mon … 6 = Sun); `3` = Thursday for Thu–Wed weeks |
 | `output.directory` | `reports` | Where HTML files are written |
 | `output.filename_pattern` | `{period}_{date}.html` | Output filename format |
